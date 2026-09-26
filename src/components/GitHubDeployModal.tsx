@@ -52,20 +52,20 @@ export const GitHubDeployModal: React.FC<GitHubDeployModalProps> = ({ onClose })
           <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
             <div className="font-semibold text-white mb-1 flex items-center gap-1.5">
               <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-500/40 text-cyan-300 text-[11px] flex items-center justify-center">2</span>
-              <span>Push Source / Build Files</span>
+              <span>Push to GitHub</span>
             </div>
             <p className="text-slate-400 text-[11px] ml-6.5">
-              Push this repository or run <code className="text-cyan-300 font-mono">npm run build</code> and push the <code className="text-cyan-300 font-mono">dist</code> output to the repository's main branch.
+              Export/push the project to your repo. The pre-compiled production build is stored directly in the <code className="text-cyan-300 font-mono">/docs</code> folder.
             </p>
           </div>
 
           <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
             <div className="font-semibold text-white mb-1 flex items-center gap-1.5">
               <span className="w-5 h-5 rounded-full bg-cyan-950 border border-cyan-500/40 text-cyan-300 text-[11px] flex items-center justify-center">3</span>
-              <span>Enable GitHub Pages</span>
+              <span>Enable GitHub Pages (/docs)</span>
             </div>
             <p className="text-slate-400 text-[11px] ml-6.5">
-              In repository <strong>Settings</strong> → <strong>Pages</strong>, select branch <strong>main</strong> (root) and hit Save.
+              In repository <strong>Settings</strong> → <strong>Pages</strong>, select branch <strong>main</strong> and folder <strong className="text-cyan-300 font-mono">/docs</strong> (NOT /root), then hit <strong>Save</strong>.
             </p>
           </div>
 

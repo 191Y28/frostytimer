@@ -20,7 +20,9 @@ A dual-mode productivity timer and private unblocked HTML5 & Flash game archive 
 
 3. **Enable GitHub Pages**:
    - Go to **Settings** > **Pages**
-   - Under **Build and deployment** > **Branch**, select \`main\` (or \`/root\`)
+   - Under **Build and deployment** > **Branch**:
+     - Select branch: \`main\`
+     - Select folder: \`/docs\` (IMPORTANT: choose \`/docs\`, NOT \`/ (root)\`)
    - Click **Save**
 
 4. **Your Live URL**:
