@@ -1,0 +1,6 @@
+{
+  "name": "Frosty Timer",
+  "description": "Frosty Timer - Precision focus timer and productivity stopwatch.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
