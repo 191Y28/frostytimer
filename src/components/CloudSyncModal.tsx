@@ -9,7 +9,8 @@ import { getStorageStats, getAllGamesFromDB, saveMultipleGamesToDB } from '../ut
 import {
   getAllGamesFromFirestore,
   saveMultipleGamesToFirestore,
-  testConnection
+  testConnection,
+  getIsQuotaExceeded
 } from '../utils/firebaseStorage';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { sound } from '../utils/audio';
@@ -111,22 +112,41 @@ export const CloudSyncModal: React.FC<CloudSyncModalProps> = ({ onClose, onRefre
         </div>
 
         {/* Live Cloud Status Banner */}
-        <div className="mt-4 p-4 bg-emerald-950/30 border border-emerald-800/60 rounded-xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs font-semibold text-emerald-300">
-                Connected to Firebase Project
+        {getIsQuotaExceeded() ? (
+          <div className="mt-4 p-4 bg-amber-950/40 border border-amber-800/80 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-semibold text-amber-300">
+                  Firestore Daily Quota Limit Reached
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800">
+                IndexedDB Active
               </span>
             </div>
-            <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
-              {firebaseConfig.projectId}
-            </span>
+            <p className="text-[11px] text-slate-300 mt-2 leading-relaxed">
+              Google Cloud Firestore reached its free daily read/write quota for today. Your games and updates are stored safely in local browser IndexedDB and will sync to Cloud when quota resets.
+            </p>
           </div>
-          <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-            All newly uploaded games, titles, and rankings are now automatically mirrored to Firebase Firestore so they survive browser cache cleans, incognito resets, or hard reloads.
-          </p>
-        </div>
+        ) : (
+          <div className="mt-4 p-4 bg-emerald-950/30 border border-emerald-800/60 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-semibold text-emerald-300">
+                  Connected to Firebase Project
+                </span>
+              </div>
+              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
+                {firebaseConfig.projectId}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+              All newly uploaded games, titles, and rankings are automatically mirrored to Firebase Firestore so they survive browser cache cleans, incognito resets, or hard reloads.
+            </p>
+          </div>
+        )}
 
         {/* Storage Comparison */}
         <div className="mt-4 grid grid-cols-2 gap-3 text-xs">

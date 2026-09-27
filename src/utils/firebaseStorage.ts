@@ -21,17 +21,32 @@ export const db = firebaseConfig.firestoreDatabaseId
 
 const GAMES_COLLECTION = 'games';
 
+let isQuotaExceeded = false;
+
+export function getIsQuotaExceeded(): boolean {
+  return isQuotaExceeded;
+}
+
+function handleFirestoreError(err: any, context: string) {
+  const msg = err?.message || String(err);
+  if (msg.includes('Quota limit exceeded') || err?.code === 'resource-exhausted') {
+    isQuotaExceeded = true;
+    console.warn(`Firestore Quota Limit Exceeded in [${context}]. Falling back seamlessly to local IndexedDB storage.`);
+  } else {
+    console.warn(`Firestore warning in [${context}]:`, msg);
+  }
+}
+
 /**
  * Validate connection to Firestore at startup
  */
 export async function testConnection(): Promise<boolean> {
+  if (isQuotaExceeded) return false;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
     return true;
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firestore is operating in offline mode.');
-    }
+    handleFirestoreError(error, 'testConnection');
     return false;
   }
 }
@@ -40,6 +55,7 @@ export async function testConnection(): Promise<boolean> {
  * Fetch all games metadata from Firestore cloud
  */
 export async function getAllGamesFromFirestore(): Promise<GameItem[]> {
+  if (isQuotaExceeded) return [];
   try {
     const colRef = collection(db, GAMES_COLLECTION);
     const snapshot = await getDocs(colRef);
@@ -50,7 +66,7 @@ export async function getAllGamesFromFirestore(): Promise<GameItem[]> {
     });
     return games;
   } catch (err) {
-    console.error('Error fetching games from Firestore:', err);
+    handleFirestoreError(err, 'getAllGamesFromFirestore');
     return [];
   }
 }
@@ -59,11 +75,12 @@ export async function getAllGamesFromFirestore(): Promise<GameItem[]> {
  * Save a single game to Firestore (metadata only, zero memory bloat)
  */
 export async function saveGameToFirestore(game: GameItem): Promise<void> {
+  if (isQuotaExceeded) return;
   try {
     const cleanGame = sanitizeGameData(game);
     await setDoc(doc(db, GAMES_COLLECTION, game.id), cleanGame);
   } catch (err) {
-    console.error(`Error saving game ${game.id} to Firestore:`, err);
+    handleFirestoreError(err, `saveGameToFirestore:${game.id}`);
   }
 }
 
@@ -71,11 +88,12 @@ export async function saveGameToFirestore(game: GameItem): Promise<void> {
  * Update game ranking directly in Firestore
  */
 export async function updateGameRankingInFirestore(id: string, ranking: number): Promise<void> {
+  if (isQuotaExceeded) return;
   try {
     const gameDocRef = doc(db, GAMES_COLLECTION, id);
     await updateDoc(gameDocRef, { ranking });
   } catch (err) {
-    console.error(`Error updating ranking for ${id} in Firestore:`, err);
+    handleFirestoreError(err, `updateGameRankingInFirestore:${id}`);
   }
 }
 
@@ -83,10 +101,11 @@ export async function updateGameRankingInFirestore(id: string, ranking: number):
  * Save multiple games in batches of 400 (Firestore max 500 per batch)
  */
 export async function saveMultipleGamesToFirestore(games: GameItem[]): Promise<void> {
-  if (!games.length) return;
+  if (isQuotaExceeded || !games.length) return;
   try {
     const CHUNK_SIZE = 400;
     for (let i = 0; i < games.length; i += CHUNK_SIZE) {
+      if (isQuotaExceeded) break;
       const chunk = games.slice(i, i + CHUNK_SIZE);
       const batch = writeBatch(db);
       for (const game of chunk) {
@@ -96,7 +115,7 @@ export async function saveMultipleGamesToFirestore(games: GameItem[]): Promise<v
       await batch.commit();
     }
   } catch (err) {
-    console.error('Error saving batch games to Firestore:', err);
+    handleFirestoreError(err, 'saveMultipleGamesToFirestore');
   }
 }
 
@@ -104,10 +123,11 @@ export async function saveMultipleGamesToFirestore(games: GameItem[]): Promise<v
  * Delete a game from Firestore
  */
 export async function deleteGameFromFirestore(id: string): Promise<void> {
+  if (isQuotaExceeded) return;
   try {
     await deleteDoc(doc(db, GAMES_COLLECTION, id));
   } catch (err) {
-    console.error(`Error deleting game ${id} from Firestore:`, err);
+    handleFirestoreError(err, `deleteGameFromFirestore:${id}`);
   }
 }
 
@@ -115,10 +135,11 @@ export async function deleteGameFromFirestore(id: string): Promise<void> {
  * Clear all games from Firestore (batches of 300 until completely empty)
  */
 export async function clearAllGamesFromFirestore(): Promise<void> {
+  if (isQuotaExceeded) return;
   try {
     const colRef = collection(db, GAMES_COLLECTION);
     let snapshot = await getDocs(colRef);
-    while (snapshot.docs.length > 0) {
+    while (snapshot.docs.length > 0 && !isQuotaExceeded) {
       const docs = snapshot.docs;
       const CHUNK_SIZE = 300;
       for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
@@ -132,7 +153,7 @@ export async function clearAllGamesFromFirestore(): Promise<void> {
       snapshot = await getDocs(colRef);
     }
   } catch (err) {
-    console.error('Error clearing all games from Firestore:', err);
+    handleFirestoreError(err, 'clearAllGamesFromFirestore');
   }
 }
 
@@ -140,10 +161,14 @@ export async function clearAllGamesFromFirestore(): Promise<void> {
  * Subscribe to real-time game updates from Firestore
  */
 export function subscribeToGames(callback: (games: GameItem[]) => void): () => void {
+  if (isQuotaExceeded) {
+    return () => {};
+  }
   const colRef = collection(db, GAMES_COLLECTION);
   return onSnapshot(
     colRef,
     (snapshot) => {
+      if (isQuotaExceeded) return;
       const games: GameItem[] = [];
       snapshot.forEach((d) => {
         const data = d.data() as GameItem;
@@ -152,7 +177,7 @@ export function subscribeToGames(callback: (games: GameItem[]) => void): () => v
       callback(games);
     },
     (err) => {
-      console.warn('Firestore subscription error (will rely on local/direct fetch):', err);
+      handleFirestoreError(err, 'subscribeToGames');
     }
   );
 }

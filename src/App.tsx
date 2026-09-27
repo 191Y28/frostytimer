@@ -89,19 +89,12 @@ export default function App() {
       try {
         testConnection();
 
-        // Guaranteed automatic purge of all old 855 games from IndexedDB and Firestore
-        const PURGE_KEY = 'frosty_clean_slate_v4';
-        const hasPurged = localStorage.getItem(PURGE_KEY);
-        if (!hasPurged) {
-          localStorage.setItem(PURGE_KEY, 'true');
-          setGames([]);
-          await clearAllGamesFromDB();
-          await clearAllGamesFromFirestore();
-          return;
+        // 1. Get stored games from IndexedDB first for instant UI loading
+        const storedGames = await getAllGamesFromDB();
+        if (storedGames.length > 0) {
+          setGames(storedGames);
         }
 
-        // 1. Get stored games from IndexedDB first
-        const storedGames = await getAllGamesFromDB();
         const storedCodeMap = new Map<string, string>();
         const storedDriveMap = new Map<string, string>();
         storedGames.forEach((g) => {
@@ -109,7 +102,7 @@ export default function App() {
           if (g.driveUrl) storedDriveMap.set(g.id, g.driveUrl);
         });
 
-        // 2. Fetch directly from Firebase Firestore Cloud
+        // 2. Asynchronously sync from Firebase Firestore Cloud if available
         const cloudGames = await getAllGamesFromFirestore();
         if (cloudGames && cloudGames.length > 0) {
           const cleanCloudGames = cloudGames
@@ -123,11 +116,16 @@ export default function App() {
           return;
         }
 
-        // 3. If Firestore is empty, sync IndexedDB
-        setGames(storedGames);
+        // 3. Fallback: If both IndexedDB and Firestore are empty (e.g. first visit on GitHub Pages)
+        if (storedGames.length === 0 && (!cloudGames || cloudGames.length === 0)) {
+          if (DEFAULT_GAMES.length > 0) {
+            setGames(DEFAULT_GAMES);
+            await saveMultipleGamesToDB(DEFAULT_GAMES);
+            await saveMultipleGamesToFirestore(DEFAULT_GAMES);
+          }
+        }
       } catch (err) {
-        console.error('Error during initial game load:', err);
-        setGames([]);
+        console.warn('Initial game load warning:', err);
       }
     };
 
@@ -137,8 +135,7 @@ export default function App() {
     const unsubscribe = subscribeToGames(async (incomingGames) => {
       try {
         if (!incomingGames || incomingGames.length === 0) {
-          setGames([]);
-          await clearAllGamesFromDB();
+          // Do not wipe local database when Firestore is empty or quota is exceeded
           return;
         }
 
@@ -159,7 +156,7 @@ export default function App() {
         setGames(cleanIncoming);
         await saveMultipleGamesToDB(cleanIncoming);
       } catch (err) {
-        console.warn('Error during Firestore subscription sync:', err);
+        console.warn('Firestore subscription sync warning:', err);
       }
     });
 
