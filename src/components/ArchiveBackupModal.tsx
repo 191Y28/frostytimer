@@ -8,6 +8,8 @@ import React, { useRef, useState } from 'react';
 import { X, Download, Upload, HardDrive, Check, AlertCircle } from 'lucide-react';
 import { GameItem } from '../types';
 import { getAllGamesFromDB, saveMultipleGamesToDB } from '../utils/indexedDB';
+import { saveMultipleGamesToFirestore } from '../utils/firebaseStorage';
+import { sanitizeAndRepairHtml, normalizeGenre } from '../utils/eliteCodeSanitizer';
 import { sound } from '../utils/audio';
 
 interface ArchiveBackupModalProps {
@@ -60,7 +62,7 @@ export const ArchiveBackupModal: React.FC<ArchiveBackupModalProps> = ({ onClose,
 
     sound.playKeypress();
     setIsImporting(true);
-    setStatusMsg(null);
+    setStatusMsg('Processing JSON backup and sanitizing games...');
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -68,15 +70,59 @@ export const ArchiveBackupModal: React.FC<ArchiveBackupModalProps> = ({ onClose,
         const text = evt.target?.result as string;
         const parsed = JSON.parse(text);
 
-        if (Array.isArray(parsed.games)) {
-          await saveMultipleGamesToDB(parsed.games);
+        const rawList: any[] = Array.isArray(parsed)
+          ? parsed
+          : Array.isArray(parsed.games)
+          ? parsed.games
+          : Array.isArray(parsed.data)
+          ? parsed.data
+          : [];
+
+        if (rawList.length > 0) {
+          const sanitizedGames: GameItem[] = rawList.map((g, idx) => {
+            let code = g.codeOrData || g.code || g.html || '';
+            if (code && typeof code === 'string' && code.length > 20) {
+              const { repairedHtml } = sanitizeAndRepairHtml(code);
+              code = repairedHtml;
+            }
+
+            const category = normalizeGenre(g.category || g.genre);
+
+            return {
+              id: g.id || `imported_${Date.now()}_${idx}`,
+              title: g.title || g.name || `Game ${idx + 1}`,
+              type: g.type || 'html',
+              coverTheme: g.coverTheme || 'aurora',
+              category,
+              genre: category,
+              ranking: typeof g.ranking === 'number' ? g.ranking : 9.0,
+              healthScore: typeof g.healthScore === 'number' ? g.healthScore : 100,
+              fileSize: g.fileSize || (code ? new Blob([code]).size : 1024 * 50),
+              addedAt: g.addedAt || Date.now() - idx * 1000,
+              isFavorite: !!g.isFavorite,
+              isSlop: !!g.isSlop,
+              codeOrData: code,
+              driveUrl: g.driveUrl || g.url || '',
+              detectedEngine: g.detectedEngine || 'HTML5 Engine',
+              isEliteProtected: true,
+            };
+          });
+
+          // Save locally to IndexedDB
+          await saveMultipleGamesToDB(sanitizedGames);
+
+          // Sync directly to Firebase Firestore Cloud
+          setStatusMsg(`Syncing ${sanitizedGames.length} games to Firebase Firestore...`);
+          await saveMultipleGamesToFirestore(sanitizedGames);
+
           sound.playUnlock();
-          setStatusMsg(`Successfully restored ${parsed.games.length} games into local library!`);
+          setStatusMsg(`Successfully restored and synced ${sanitizedGames.length} games to Cloud & Local Storage!`);
           onRefreshGames();
         } else {
-          setStatusMsg('Invalid backup file structure.');
+          setStatusMsg('Invalid JSON format. Expected an array of games or a .frosty backup file.');
         }
-      } catch {
+      } catch (err) {
+        console.error('JSON backup import error:', err);
         setStatusMsg('Error parsing JSON backup file.');
       }
       setIsImporting(false);

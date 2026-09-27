@@ -133,6 +133,29 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
     };
   }
 
+  // 0b. Google Gadget XML & <Module> Unboxing (Strips XML wrapper tags & extracts CDATA payload)
+  if (
+    code.includes('<Module') ||
+    code.includes('<Content') ||
+    code.includes('<![CDATA[') ||
+    code.includes('</Module>')
+  ) {
+    const cdataMatch = code.match(/<!\[CDATA\[([\s\S]*?)\]\]>/i);
+    if (cdataMatch && cdataMatch[1] && cdataMatch[1].trim().length > 20) {
+      code = cdataMatch[1].trim();
+      fixesApplied.push('Unwrapped Google Gadget CDATA HTML payload');
+    } else {
+      code = code
+        .replace(/<\/?Module[^>]*>/gi, '')
+        .replace(/<\/?ModulePrefs[^>]*>/gi, '')
+        .replace(/<\/?Content[^>]*>/gi, '')
+        .replace(/<!\[CDATA\[/gi, '')
+        .replace(/\]\]>/gi, '')
+        .trim();
+      fixesApplied.push('Stripped Google Gadget XML tags (<Module>, <Content>)');
+    }
+  }
+
   // 1. Strip all white / bright bgcolor attributes that cause white borders & side bars
   code = code
     .replace(/\s*bgcolor=["']?[^"'>\s]+["']?/gi, ' bgcolor="#000000"')
