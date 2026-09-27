@@ -111,19 +111,20 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
   const fixesApplied: string[] = [];
   let code = rawHtml;
 
-  // 0. Detect if rawHtml is actually a Google Drive login / preview shell page
+  // 0a. Strip leading HTML comments and preamble whitespace that break browser MIME type sniffing
+  code = code.replace(/^(?:\s*<!--[\s\S]*?-->\s*)+/gi, '').trim();
+
+  // 0b. Detect if rawHtml is actually a Google Drive login / virus scan warning page
   if (
     rawHtml.includes('Sign in - Google Accounts') ||
-    rawHtml.includes('Google Drive - Virus scan warning') ||
-    rawHtml.includes('drive.usercontent.google.com') ||
-    rawHtml.includes('docs.google.com/picker')
+    (rawHtml.includes('Google Drive - Virus scan warning') && rawHtml.includes('download_warning'))
   ) {
     return {
-      repairedHtml: '',
+      repairedHtml: rawHtml,
       report: {
-        healthScore: 0,
-        issuesFound: ['Downloaded content is a Google Drive login/confirmation shell page'],
-        fixesApplied: ['Redirected to native Google Drive preview engine'],
+        healthScore: 50,
+        issuesFound: ['Downloaded content is a Google Drive confirmation shell page'],
+        fixesApplied: ['Preserved raw html payload'],
         hasFramebusters: false,
         hasBlockedTrackers: false,
         hasMissingSdk: false,
@@ -133,7 +134,7 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
     };
   }
 
-  // 0b. Google Gadget XML & <Module> Unboxing (Strips XML wrapper tags & extracts CDATA payload)
+  // 0c. Google Gadget XML & <Module> Unboxing (Strips XML wrapper tags & extracts CDATA payload)
   if (
     code.includes('<Module') ||
     code.includes('<Content') ||
@@ -156,6 +157,9 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
     }
   }
 
+  // Strip any newly exposed leading comments after XML unboxing
+  code = code.replace(/^(?:\s*<!--[\s\S]*?-->\s*)+/gi, '').trim();
+
   // 1. Strip all white / bright bgcolor attributes that cause white borders & side bars
   code = code
     .replace(/\s*bgcolor=["']?[^"'>\s]+["']?/gi, ' bgcolor="#000000"')
@@ -169,7 +173,9 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
     .replace(/src=["'](?:\.\/)?howler(?:\.min)?\.js["']/gi, 'src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"')
     .replace(/src=["'](?:\.\/)?pixi(?:\.min)?\.js["']/gi, 'src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/6.5.8/pixi.min.js"')
     // Replace broken relative Ruffle references with official CDN
-    .replace(/src=["'](?:\.\/)?ruffle(?:\.js)?["']/gi, 'src="https://unpkg.com/@ruffle-rs/ruffle"');
+    .replace(/src=["'](?:\.\/)?ruffle(?:\.js)?["']/gi, 'src="https://unpkg.com/@ruffle-rs/ruffle"')
+    // Replace broken relative EmuJS loader scripts with official jsdelivr CDN
+    .replace(/src=["'](?:\.\/)?loader\.js["']/gi, 'src="https://cdn.jsdelivr.net/gh/ethanaobrien/emujs@main/loader.js"');
 
   // 3. Detect & Neutralize Framebusters (Anti-Iframe Breakout)
   const framebusterRegex = /(top|parent|window\.top|window\.parent)\.location(\s*=\s*|\.replace\(|\.href\s*=\s*)/gi;

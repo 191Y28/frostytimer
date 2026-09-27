@@ -22,6 +22,7 @@ import { DeveloperDeleteModal } from './components/DeveloperDeleteModal';
 import { GameOperationsHubModal, HubTab } from './components/GameOperationsHubModal';
 import { GameItem } from './types';
 import { DEFAULT_GAMES } from './utils/defaultGames';
+import { sanitizeAndRepairHtml } from './utils/eliteCodeSanitizer';
 import {
   getAllGamesFromDB,
   getGameByIdFromDB,
@@ -91,9 +92,6 @@ export default function App() {
 
         // 1. Get stored games from IndexedDB first for instant UI loading
         const storedGames = await getAllGamesFromDB();
-        if (storedGames.length > 0) {
-          setGames(storedGames);
-        }
 
         const storedCodeMap = new Map<string, string>();
         const storedDriveMap = new Map<string, string>();
@@ -102,15 +100,31 @@ export default function App() {
           if (g.driveUrl) storedDriveMap.set(g.id, g.driveUrl);
         });
 
+        // Helper to auto-repair games containing raw Google Gadget XML, comments, or broken loader references
+        const repairGame = (g: GameItem): GameItem => {
+          let code = g.codeOrData || storedCodeMap.get(g.id) || '';
+          if (code && typeof code === 'string' && code.length > 20) {
+            const { repairedHtml } = sanitizeAndRepairHtml(code);
+            if (repairedHtml) {
+              code = repairedHtml;
+            }
+          }
+          return {
+            ...g,
+            codeOrData: code,
+            driveUrl: g.driveUrl || storedDriveMap.get(g.id) || '',
+          };
+        };
+
+        if (storedGames.length > 0) {
+          const repairedStored = storedGames.map(repairGame);
+          setGames(repairedStored);
+        }
+
         // 2. Asynchronously sync from Firebase Firestore Cloud if available
         const cloudGames = await getAllGamesFromFirestore();
         if (cloudGames && cloudGames.length > 0) {
-          const cleanCloudGames = cloudGames
-            .map((cg) => ({
-              ...cg,
-              codeOrData: cg.codeOrData || storedCodeMap.get(cg.id) || '',
-              driveUrl: cg.driveUrl || storedDriveMap.get(cg.id) || '',
-            }));
+          const cleanCloudGames = cloudGames.map(repairGame);
           setGames(cleanCloudGames);
           await saveMultipleGamesToDB(cleanCloudGames);
           return;
@@ -147,12 +161,20 @@ export default function App() {
           if (g.driveUrl) storedDriveMap.set(g.id, g.driveUrl);
         });
 
-        const cleanIncoming = incomingGames
-          .map((cg) => ({
+        const cleanIncoming = incomingGames.map((cg) => {
+          let code = cg.codeOrData || storedCodeMap.get(cg.id) || '';
+          if (code && typeof code === 'string' && code.length > 20) {
+            const { repairedHtml } = sanitizeAndRepairHtml(code);
+            if (repairedHtml) {
+              code = repairedHtml;
+            }
+          }
+          return {
             ...cg,
-            codeOrData: cg.codeOrData || storedCodeMap.get(cg.id) || '',
+            codeOrData: code,
             driveUrl: cg.driveUrl || storedDriveMap.get(cg.id) || '',
-          }));
+          };
+        });
         setGames(cleanIncoming);
         await saveMultipleGamesToDB(cleanIncoming);
       } catch (err) {
