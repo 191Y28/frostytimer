@@ -1,0 +1,37 @@
+{
+  "entities": {
+    "Game": {
+      "title": "Game",
+      "description": "Represents an uploaded or custom arcade game in Frosty",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "coverTheme": { "type": "string" },
+        "codeOrData": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "addedAt": { "type": "number" },
+        "detectedEngine": { "type": "string" },
+        "category": { "type": "string" },
+        "healthScore": { "type": "number" },
+        "issuesFixed": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "isEliteProtected": { "type": "boolean" },
+        "isFavorite": { "type": "boolean" },
+        "ranking": { "type": "number" },
+        "playCount": { "type": "number" }
+      },
+      "required": ["id", "title", "type", "addedAt"]
+    }
+  },
+  "firestore": {
+    "/games/{gameId}": {
+      "schema": "Game",
+      "description": "Public games library synchronized in real-time"
+    }
+  }
+}

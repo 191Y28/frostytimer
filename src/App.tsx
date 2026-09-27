@@ -14,10 +14,12 @@ import { AIView } from './components/AIView';
 import { VideosView } from './components/VideosView';
 import { TabCloakModal, CloakPreset } from './components/TabCloakModal';
 import { ArchiveBackupModal } from './components/ArchiveBackupModal';
+import { CloudSyncModal } from './components/CloudSyncModal';
 import { GitHubDeployModal } from './components/GitHubDeployModal';
 import { EvasionSettingsModal } from './components/EvasionSettingsModal';
 import { DeveloperRenameModal } from './components/DeveloperRenameModal';
 import { DeveloperDeleteModal } from './components/DeveloperDeleteModal';
+import { GameOperationsHubModal, HubTab } from './components/GameOperationsHubModal';
 import { GameItem } from './types';
 import { DEFAULT_GAMES } from './utils/defaultGames';
 import {
@@ -28,8 +30,19 @@ import {
   deleteGameFromDB,
   updateGameInDB,
   updateGameRankingInDB,
+  clearAllGamesFromDB,
 } from './utils/indexedDB';
+import {
+  getAllGamesFromFirestore,
+  saveMultipleGamesToFirestore,
+  saveGameToFirestore,
+  deleteGameFromFirestore,
+  clearAllGamesFromFirestore,
+  subscribeToGames,
+  testConnection
+} from './utils/firebaseStorage';
 import { sound } from './utils/audio';
+import { extractDriveFileId } from './utils/linkExtractorImporter';
 
 export default function App() {
   // Cloak state: 'timer' | 'calculator' | 'unlocked'
@@ -42,6 +55,7 @@ export default function App() {
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
   const [showCloakSettings, setShowCloakSettings] = useState<boolean>(false);
   const [showBackupModal, setShowBackupModal] = useState<boolean>(false);
+  const [showCloudSyncModal, setShowCloudSyncModal] = useState<boolean>(false);
   const [showDeployModal, setShowDeployModal] = useState<boolean>(false);
   const [showEvasionModal, setShowEvasionModal] = useState<boolean>(false);
 
@@ -52,8 +66,10 @@ export default function App() {
 
   // Voting and Ranking Mode & Filter Type
   const [isVoteMode, setIsVoteMode] = useState<boolean>(false);
-  const [filterType, setFilterType] = useState<'all' | 'popular' | 'favorites'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'popular' | 'favorites' | 'slop'>('all');
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [showOperationsHub, setShowOperationsHub] = useState<boolean>(false);
+  const [operationsHubInitialTab, setOperationsHubInitialTab] = useState<HubTab>('home');
 
   // Tab cloak preset
   const [tabPreset, setTabPreset] = useState<CloakPreset>('frosty');
@@ -68,30 +84,88 @@ export default function App() {
     const savedTabPreset = (localStorage.getItem('frosty_tab_preset') as CloakPreset) || 'frosty';
     applyTabCloak(savedTabPreset);
 
-    // Initialize games
+    // Initialize games with real Firestore Cloud persistence + local IndexedDB fallback
     const loadGames = async () => {
       try {
-        const storedGames = await getAllGamesFromDB();
-        // Check if stored games contain legacy fillers
-        const hasLegacyFillers = storedGames.some(
-          (g) => g.id === 'frosty-snake' || g.id === 'frosty-flappy' || g.id === 'frosty-space' || g.id === 'frosty-slope'
-        );
+        testConnection();
 
-        if (hasLegacyFillers || storedGames.length === 0) {
-          // Remove old fillers, preserve any custom user uploaded games, add new premier games
-          const customUserGames = storedGames.filter((g) => g.type !== 'built-in' && !g.id.startsWith('frosty-'));
-          const combined = [...DEFAULT_GAMES, ...customUserGames];
-          await saveMultipleGamesToDB(combined);
-          setGames(combined);
-        } else {
-          setGames(storedGames);
+        // Guaranteed automatic purge of all old 855 games from IndexedDB and Firestore
+        const PURGE_KEY = 'frosty_clean_slate_v4';
+        const hasPurged = localStorage.getItem(PURGE_KEY);
+        if (!hasPurged) {
+          localStorage.setItem(PURGE_KEY, 'true');
+          setGames([]);
+          await clearAllGamesFromDB();
+          await clearAllGamesFromFirestore();
+          return;
         }
+
+        // 1. Get stored games from IndexedDB first
+        const storedGames = await getAllGamesFromDB();
+        const storedCodeMap = new Map<string, string>();
+        const storedDriveMap = new Map<string, string>();
+        storedGames.forEach((g) => {
+          if (g.codeOrData) storedCodeMap.set(g.id, g.codeOrData);
+          if (g.driveUrl) storedDriveMap.set(g.id, g.driveUrl);
+        });
+
+        // 2. Fetch directly from Firebase Firestore Cloud
+        const cloudGames = await getAllGamesFromFirestore();
+        if (cloudGames && cloudGames.length > 0) {
+          const cleanCloudGames = cloudGames
+            .map((cg) => ({
+              ...cg,
+              codeOrData: cg.codeOrData || storedCodeMap.get(cg.id) || '',
+              driveUrl: cg.driveUrl || storedDriveMap.get(cg.id) || '',
+            }));
+          setGames(cleanCloudGames);
+          await saveMultipleGamesToDB(cleanCloudGames);
+          return;
+        }
+
+        // 3. If Firestore is empty, sync IndexedDB
+        setGames(storedGames);
       } catch (err) {
-        // Fallback to in-memory defaults
-        setGames(DEFAULT_GAMES);
+        console.error('Error during initial game load:', err);
+        setGames([]);
       }
     };
+
     loadGames();
+
+    // Setup real-time Firestore listener with safe local code preservation
+    const unsubscribe = subscribeToGames(async (incomingGames) => {
+      try {
+        if (!incomingGames || incomingGames.length === 0) {
+          setGames([]);
+          await clearAllGamesFromDB();
+          return;
+        }
+
+        const storedGames = await getAllGamesFromDB();
+        const storedCodeMap = new Map<string, string>();
+        const storedDriveMap = new Map<string, string>();
+        storedGames.forEach((g) => {
+          if (g.codeOrData) storedCodeMap.set(g.id, g.codeOrData);
+          if (g.driveUrl) storedDriveMap.set(g.id, g.driveUrl);
+        });
+
+        const cleanIncoming = incomingGames
+          .map((cg) => ({
+            ...cg,
+            codeOrData: cg.codeOrData || storedCodeMap.get(cg.id) || '',
+            driveUrl: cg.driveUrl || storedDriveMap.get(cg.id) || '',
+          }));
+        setGames(cleanIncoming);
+        await saveMultipleGamesToDB(cleanIncoming);
+      } catch (err) {
+        console.warn('Error during Firestore subscription sync:', err);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   // Panic Cloak keyboard listener: Press `~` (tilde) or `Escape` to snap back into timer
@@ -169,14 +243,62 @@ export default function App() {
   };
 
   const handleBatchSave = async (newGames: GameItem[]) => {
-    const updated = [...newGames, ...games];
-    setGames(updated);
-    await saveMultipleGamesToDB(newGames);
+    sound.playUnlock();
+    // Ultra-Efficient Duplicate Replacement: Matches by Title, File Name, Base Filename, or Drive ID
+    const updatedGames = [...games];
+    const savedItems: GameItem[] = [];
+
+    const normalizeKey = (s?: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    newGames.forEach((newG) => {
+      const normTitle = normalizeKey(newG.title);
+      const normFile = normalizeKey(newG.fileName);
+      const newFileBase = normalizeKey((newG.fileName || '').replace(/\.[^/.]+$/, ''));
+      const newDriveId = newG.driveUrl ? extractDriveFileId(newG.driveUrl) : null;
+
+      const existingIdx = updatedGames.findIndex((existing) => {
+        const existTitle = normalizeKey(existing.title);
+        const existFile = normalizeKey(existing.fileName);
+        const existFileBase = normalizeKey((existing.fileName || '').replace(/\.[^/.]+$/, ''));
+        const existDriveId = existing.driveUrl ? extractDriveFileId(existing.driveUrl) : null;
+
+        // 1. Title match
+        if (normTitle && normTitle === existTitle) return true;
+        // 2. Exact File Name match
+        if (normFile && normFile.length > 3 && normFile === existFile) return true;
+        // 3. Filename base matched against title
+        if (newFileBase && newFileBase.length > 2 && (newFileBase === existTitle || normTitle === existFileBase)) return true;
+        // 4. Drive ID match
+        if (newDriveId && existDriveId && newDriveId === existDriveId) return true;
+
+        return false;
+      });
+
+      if (existingIdx !== -1) {
+        // Overwrite old game entry with fresh working upload, retaining original ID
+        const replaced: GameItem = {
+          ...newG,
+          id: updatedGames[existingIdx].id,
+          coverTheme: updatedGames[existingIdx].coverTheme || newG.coverTheme,
+        };
+        updatedGames[existingIdx] = replaced;
+        savedItems.push(replaced);
+      } else {
+        updatedGames.unshift(newG);
+        savedItems.push(newG);
+      }
+    });
+
+    setGames(updatedGames);
+    await saveMultipleGamesToDB(savedItems);
+    await saveMultipleGamesToFirestore(savedItems);
   };
 
   const handleDeleteGame = async (id: string) => {
     setGames((prev) => prev.filter((g) => g.id !== id));
     await deleteGameFromDB(id);
+    await deleteGameFromFirestore(id);
+    sound.playTrash();
   };
 
   const handleRenameGame = async (id: string, newTitle: string) => {
@@ -187,11 +309,13 @@ export default function App() {
     const updatedGame: GameItem = { ...target, title: trimmed };
     setGames((prev) => prev.map((g) => (g.id === id ? updatedGame : g)));
     await updateGameInDB(updatedGame);
+    await saveGameToFirestore(updatedGame);
   };
 
   const handleUpdateGames = async (updatedGames: GameItem[]) => {
     setGames(updatedGames);
     await saveMultipleGamesToDB(updatedGames);
+    await saveMultipleGamesToFirestore(updatedGames);
   };
 
   const handleToggleFavorite = async (id: string) => {
@@ -200,6 +324,83 @@ export default function App() {
     const updatedGame: GameItem = { ...target, isFavorite: !target.isFavorite };
     setGames((prev) => prev.map((g) => (g.id === id ? updatedGame : g)));
     await updateGameInDB(updatedGame);
+    await saveGameToFirestore(updatedGame);
+  };
+
+  const handleToggleSlop = async (id: string) => {
+    sound.playUnlock();
+    const target = games.find((g) => g.id === id);
+    if (!target) return;
+    const updatedGame: GameItem = { ...target, isSlop: !target.isSlop };
+    setGames((prev) => prev.map((g) => (g.id === id ? updatedGame : g)));
+    await updateGameInDB(updatedGame);
+    await saveGameToFirestore(updatedGame);
+  };
+
+  const handleUpdateBatchRankings = async (
+    rankingsMap: Map<string, number>,
+    genresMap?: Map<string, string>,
+    slopMap?: Map<string, boolean>
+  ) => {
+    const updatedGames = games.map((g) => {
+      let updated = { ...g };
+      if (rankingsMap.has(g.id)) {
+        updated.ranking = rankingsMap.get(g.id)!;
+      }
+      if (genresMap && genresMap.has(g.id)) {
+        const assignedGenre = genresMap.get(g.id);
+        updated.category = assignedGenre;
+        updated.genre = assignedGenre;
+      }
+      if (slopMap && slopMap.has(g.id)) {
+        updated.isSlop = slopMap.get(g.id)!;
+      }
+      return updated;
+    });
+
+    const modifiedList = updatedGames.filter(
+      (g) =>
+        rankingsMap.has(g.id) ||
+        (genresMap && genresMap.has(g.id)) ||
+        (slopMap && slopMap.has(g.id))
+    );
+    setGames(updatedGames);
+    await saveMultipleGamesToDB(modifiedList);
+    await saveMultipleGamesToFirestore(modifiedList);
+
+    return {
+      updatedCount: modifiedList.length,
+      unmatched: [],
+    };
+  };
+
+  const handleMoveGamesToSlop = async (gameIds: string[]) => {
+    const idSet = new Set(gameIds);
+    const updatedGames = games.map((g) => {
+      if (idSet.has(g.id)) {
+        return { ...g, isSlop: true };
+      }
+      return g;
+    });
+
+    const modifiedList = updatedGames.filter((g) => idSet.has(g.id));
+    setGames(updatedGames);
+    await saveMultipleGamesToDB(modifiedList);
+    await saveMultipleGamesToFirestore(modifiedList);
+
+    return modifiedList.length;
+  };
+
+  const handleClearAllGames = async () => {
+    try {
+      await clearAllGamesFromDB();
+      await clearAllGamesFromFirestore();
+      setGames([]);
+      setActiveGame(null);
+      sound.playLock();
+    } catch (err) {
+      console.error('Failed to clear library:', err);
+    }
   };
 
   const handleUpdateRanking = async (id: string, ranking: number) => {
@@ -207,44 +408,16 @@ export default function App() {
       prev.map((g) => (g.id === id ? { ...g, ranking } : g))
     );
     await updateGameRankingInDB(id, ranking);
+    const target = games.find((g) => g.id === id);
+    if (target) {
+      await saveGameToFirestore({ ...target, ranking });
+    }
   };
 
   const handleCopyList = () => {
-    let sorted = [...games];
-    if (filterType === 'popular') {
-      sorted.sort((a, b) => {
-        const aScore = a.ranking ?? -1;
-        const bScore = b.ranking ?? -1;
-        if (bScore !== aScore) return bScore - aScore;
-        return (b.playCount || 0) - (a.playCount || 0);
-      });
-    } else if (filterType === 'favorites') {
-      sorted = sorted.filter((g) => !!g.isFavorite);
-    } else {
-      sorted.sort((a, b) => a.title.localeCompare(b.title));
-    }
-
-    const lines = sorted.map((game, index) => {
-      const rankStr =
-        game.ranking !== undefined && game.ranking !== null
-          ? `★ ${game.ranking.toFixed(3)}/10`
-          : `Unranked`;
-      return `${index + 1}. ${game.title} — ${rankStr}`;
-    });
-
-    const headerTitle =
-      filterType === 'popular'
-        ? 'FROSTY GAMES - POPULAR / RANKED LIST'
-        : filterType === 'favorites'
-        ? 'FROSTY GAMES - FAVORITES'
-        : 'FROSTY GAMES - ALPHABETICAL LIST (A-Z)';
-
-    const fullText = `${headerTitle}\nTotal Games: ${sorted.length}\n${'='.repeat(40)}\n` + lines.join('\n');
-
-    navigator.clipboard.writeText(fullText).then(() => {
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2500);
-    });
+    sound.playUnlock();
+    setOperationsHubInitialTab('home');
+    setShowOperationsHub(true);
   };
 
   // If Cloaked as Timer
@@ -282,6 +455,7 @@ export default function App() {
         isCopied={isCopied}
         onOpenCloakSettings={() => setShowCloakSettings(true)}
         onOpenBackup={() => setShowBackupModal(true)}
+        onOpenCloudSync={() => setShowCloudSyncModal(true)}
         onOpenGitHubDeploy={() => setShowDeployModal(true)}
         onOpenEvasion={() => setShowEvasionModal(true)}
         onStealthLock={handleStealthLock}
@@ -297,12 +471,14 @@ export default function App() {
           <GamesView
             games={games}
             onPlayGame={handlePlayGame}
-            onDeleteGame={handleDeleteGame}
             onToggleFavorite={handleToggleFavorite}
+            onToggleSlop={handleToggleSlop}
             onOpenUpload={() => setShowUploadModal(true)}
             onUpdateGames={handleUpdateGames}
             onUpdateRanking={handleUpdateRanking}
+            onDeleteGame={handleDeleteGame}
             isVoteMode={isVoteMode}
+            isDevMode={isDevMode}
             filterType={filterType}
             onSelectFilterType={setFilterType}
           />
@@ -340,7 +516,7 @@ export default function App() {
         />
       )}
 
-      {/* Developer Delete Tool Modal (with confirmation) */}
+      {/* Developer Delete Tool Modal */}
       {showDevDeleteModal && (
         <DeveloperDeleteModal
           games={games}
@@ -369,6 +545,16 @@ export default function App() {
         />
       )}
 
+      {/* Cloud Sync Firebase Modal */}
+      {showCloudSyncModal && (
+        <CloudSyncModal
+          onClose={() => setShowCloudSyncModal(false)}
+          onRefreshGames={(cloudGames) => {
+            setGames(cloudGames);
+          }}
+        />
+      )}
+
       {/* Static GitHub Pages Deploy Guide Modal */}
       {showDeployModal && (
         <GitHubDeployModal onClose={() => setShowDeployModal(false)} />
@@ -377,6 +563,18 @@ export default function App() {
       {/* Filter Evasion & Countermeasures Modal */}
       {showEvasionModal && (
         <EvasionSettingsModal onClose={() => setShowEvasionModal(false)} />
+      )}
+
+      {/* Game Operations Hub (Copy List, Auto Ranker & Slop Filter) */}
+      {showOperationsHub && (
+        <GameOperationsHubModal
+          games={games}
+          onClose={() => setShowOperationsHub(false)}
+          onUpdateBatchRankings={handleUpdateBatchRankings}
+          onMoveGamesToSlop={handleMoveGamesToSlop}
+          onClearAllGames={handleClearAllGames}
+          initialTab={operationsHubInitialTab}
+        />
       )}
     </div>
   );

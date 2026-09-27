@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { X, Search, Edit3, Check, Gamepad2 } from 'lucide-react';
 import { GameItem } from '../types';
 import { sound } from '../utils/audio';
+import { searchAndSortGames } from '../utils/searchHelper';
 
 interface DeveloperRenameModalProps {
   games: GameItem[];
@@ -25,9 +26,7 @@ export const DeveloperRenameModal: React.FC<DeveloperRenameModalProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [savedId, setSavedId] = useState<string | null>(null);
 
-  const filteredGames = games.filter((game) =>
-    game.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredGames = searchAndSortGames(games, search);
 
   const startEditing = (game: GameItem) => {
     sound.playKeypress();

@@ -12,6 +12,7 @@ export interface GameItem {
   type: GameType;
   coverTheme: CoverTheme;
   codeOrData?: string; // HTML string or base64 SWF
+  driveUrl?: string;
   fileName?: string;
   fileSize: number;
   addedAt: number;
@@ -19,9 +20,11 @@ export interface GameItem {
   playCount?: number;
   description?: string;
   detectedEngine?: string;
-  category?: 'arcade' | 'action' | 'puzzle' | 'retro' | 'custom';
+  category?: string; // Genre (e.g. Action, Arcade, Platformer, Shooter, Sports, etc.)
+  genre?: string; // Standardized genre alias
   healthScore?: number;
-  ranking?: number; // 0.000 to 10.000 score
+  ranking?: number; // 0.0 to 10.0 score (1 decimal place)
+  isSlop?: boolean; // Flagged as low-quality/slop, isolated in Slop Games vault
   issuesFixed?: string[];
   isEliteProtected?: boolean;
 }
@@ -35,6 +38,7 @@ export interface StagedUpload {
   detectedEngine: string;
   coverTheme: CoverTheme;
   codeOrData?: string;
+  driveUrl?: string;
   status: 'inspecting' | 'ready' | 'error';
   errorMessage?: string;
   healthScore?: number;

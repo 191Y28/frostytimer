@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+/* 
+ * Frosty Arcade Immersion - Complete scrollbar elimination
+ * Ensures every game and view runs with zero distracting scrollbars
+ */
+html, body {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}

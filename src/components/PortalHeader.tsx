@@ -13,6 +13,7 @@ import {
   EyeOff,
   ShieldCheck,
   HardDrive,
+  Cloud,
   Github,
   ShieldAlert,
   ListOrdered,
@@ -23,6 +24,8 @@ import {
   Trash2,
   LogOut,
   Lock,
+  Zap,
+  Terminal,
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 
@@ -36,6 +39,7 @@ interface PortalHeaderProps {
   isCopied?: boolean;
   onOpenCloakSettings: () => void;
   onOpenBackup: () => void;
+  onOpenCloudSync: () => void;
   onOpenGitHubDeploy: () => void;
   onOpenEvasion: () => void;
   onStealthLock: () => void;
@@ -43,7 +47,7 @@ interface PortalHeaderProps {
   isDevMode: boolean;
   onSetDevMode: (active: boolean) => void;
   onOpenRenameTool: () => void;
-  onOpenDeleteTool: () => void;
+  onOpenDeleteTool?: () => void;
 }
 
 interface TooltipButtonProps {
@@ -63,15 +67,19 @@ const TooltipButton: React.FC<TooltipButtonProps> = ({
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
 
-  let variantStyles = 'bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-slate-100 border-slate-800';
+  let variantStyles =
+    'bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-800/90';
   if (variant === 'primary') {
-    variantStyles = 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-semibold border-cyan-400';
+    variantStyles =
+      'bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 hover:text-cyan-100 border-cyan-800/60 hover:border-cyan-500/50';
   } else if (variant === 'danger') {
-    variantStyles = 'bg-slate-900/80 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border-slate-800 hover:border-rose-800/60';
+    variantStyles =
+      'bg-slate-900/80 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border-slate-800 hover:border-rose-800/60';
   }
 
   if (isActive) {
-    variantStyles = 'bg-blue-950/90 border-cyan-500/60 text-cyan-300 shadow-xs ring-1 ring-cyan-500/30';
+    variantStyles =
+      'bg-blue-950/90 border-cyan-500/60 text-cyan-300 shadow-xs ring-1 ring-cyan-500/30';
   }
 
   return (
@@ -107,6 +115,7 @@ export const PortalHeader: React.FC<PortalHeaderProps> = ({
   isCopied = false,
   onOpenCloakSettings,
   onOpenBackup,
+  onOpenCloudSync,
   onOpenGitHubDeploy,
   onOpenEvasion,
   onStealthLock,
@@ -295,6 +304,15 @@ export const PortalHeader: React.FC<PortalHeaderProps> = ({
           <TooltipButton
             onClick={() => {
               sound.playKeypress();
+              onOpenCloudSync();
+            }}
+            icon={<Cloud className="w-4 h-4 text-cyan-400" />}
+            label="Firebase Cloud Sync (Live)"
+          />
+
+          <TooltipButton
+            onClick={() => {
+              sound.playKeypress();
               onOpenCloakSettings();
             }}
             icon={<ShieldCheck className="w-4 h-4" />}
@@ -311,18 +329,14 @@ export const PortalHeader: React.FC<PortalHeaderProps> = ({
             variant="danger"
           />
 
-          {/* FAR RIGHT END: DEVELOPER MODE BUTTON WITH NO DROPDOWN ARROW */}
+          {/* FAR RIGHT END: DEVELOPER TOOLS (ICON ONLY WITH HOVER TOOLTIP) */}
           <div className="relative inline-flex items-center ml-1" ref={dropdownRef}>
-            <button
+            <TooltipButton
               onClick={handleDevModeButtonClick}
-              className={`px-3 py-2 text-xs font-semibold rounded-xl border transition-all duration-150 cursor-pointer whitespace-nowrap ${
-                isDevMode
-                  ? 'bg-blue-950/90 border-cyan-500/60 text-cyan-300 shadow-xs ring-1 ring-cyan-500/30'
-                  : 'bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-slate-100 border-slate-800'
-              }`}
-            >
-              Developer Mode
-            </button>
+              icon={<Terminal className="w-4 h-4 text-cyan-300" />}
+              label={isDevMode ? "Developer Tools (Active)" : "Developer Mode (NOCHEUFC)"}
+              isActive={isDevMode}
+            />
 
             {/* Dropdown Menu - Exactly 3 items: Rename Tool, Delete Tool, Exit Dev Mode */}
             {isDevMode && isDevDropdownOpen && (
@@ -344,18 +358,20 @@ export const PortalHeader: React.FC<PortalHeaderProps> = ({
                   <span>Rename Tool</span>
                 </button>
 
-                {/* 2. Delete Tool (with confirmation) */}
-                <button
-                  onClick={() => {
-                    sound.playKeypress();
-                    setIsDevDropdownOpen(false);
-                    onOpenDeleteTool();
-                  }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-rose-300 hover:text-rose-200 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer text-left"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Delete Tool</span>
-                </button>
+                {/* 2. Delete Tool */}
+                {onOpenDeleteTool && (
+                  <button
+                    onClick={() => {
+                      sound.playKeypress();
+                      setIsDevDropdownOpen(false);
+                      onOpenDeleteTool();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-rose-300 hover:text-rose-100 hover:bg-rose-950/60 rounded-lg transition-colors cursor-pointer text-left"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Delete Tool</span>
+                  </button>
+                )}
 
                 <div className="my-1 border-t border-slate-800/80" />
 

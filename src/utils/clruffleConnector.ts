@@ -4,9 +4,8 @@
  * 100vw/100vh full-screen coverage, letterboxing auto-fit, and anti-hang safety timers.
  */
 
-export function buildOfficialClruffleHtml(swfData: string, gameTitle: string = 'Ruffle Player'): string {
+export function buildOfficialClruffleHtml(swfBase64OrUrl: string, gameTitle: string = 'Flash Game'): string {
   return `<!DOCTYPE html>
-<!-- Ultimate Game Stash - High-Tier Frosty Ruffle Connector -->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -21,50 +20,50 @@ export function buildOfficialClruffleHtml(swfData: string, gameTitle: string = '
         box-sizing: border-box;
       }
       html, body {
-        width: 100vw !important;
-        height: 100vh !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
-        background: #000 !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #000000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
-      #player-host {
-        width: 100vw !important;
-        height: 100vh !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        background: #000;
+      #ruffle-host {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #000000;
       }
-      ruffle-player, ruffle-embed, object, embed {
-        width: 100vw !important;
-        height: 100vh !important;
-        display: block !important;
+      ruffle-player {
+        width: 100vw;
+        height: 100vh;
+        display: block;
       }
-      #loader-overlay {
+      #loading-overlay {
         position: fixed;
         inset: 0;
-        background: #020617;
+        background: #090d16;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         color: #38bdf8;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: system-ui, sans-serif;
         z-index: 99999;
-        transition: opacity 0.3s ease, visibility 0.3s;
+        transition: opacity 0.4s ease;
       }
       .spinner {
-        width: 44px;
-        height: 44px;
-        border: 3px solid rgba(56, 189, 248, 0.15);
+        width: 48px;
+        height: 48px;
+        border: 4px solid rgba(56, 189, 248, 0.2);
         border-top-color: #38bdf8;
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
-        margin-bottom: 14px;
+        margin-bottom: 16px;
       }
       @keyframes spin {
         to { transform: rotate(360deg); }
@@ -72,28 +71,26 @@ export function buildOfficialClruffleHtml(swfData: string, gameTitle: string = '
     </style>
   </head>
   <body>
-    <div id="loader-overlay">
+    <div id="loading-overlay">
       <div class="spinner"></div>
-      <div style="font-weight: 700; font-size: 14px; letter-spacing: 0.5px;">Initializing Ruffle Flash Engine</div>
-      <div id="status-msg" style="font-size: 11px; color: #94a3b8; margin-top: 6px;">Loading WebAssembly Virtual Machine...</div>
+      <div style="font-weight: 600; font-size: 15px;">Loading Flash Game...</div>
+      <div id="status" style="font-size: 12px; color: #94a3b8; margin-top: 6px;">Initializing Ruffle Emulator</div>
     </div>
 
-    <div id="player-host"></div>
+    <div id="ruffle-host"></div>
 
     <script>
       (function() {
-        const swfPayload = ${JSON.stringify(swfData)};
-        const host = document.getElementById('player-host');
-        const loader = document.getElementById('loader-overlay');
-        const statusMsg = document.getElementById('status-msg');
+        const swfPayload = ${JSON.stringify(swfBase64OrUrl)};
         let playerInstance = null;
 
         function dismissLoader() {
-          if (loader && loader.style.display !== 'none') {
+          const loader = document.getElementById('loading-overlay');
+          if (loader) {
             loader.style.opacity = '0';
             setTimeout(function() {
               loader.style.display = 'none';
-            }, 300);
+            }, 400);
           }
         }
 
@@ -106,35 +103,21 @@ export function buildOfficialClruffleHtml(swfData: string, gameTitle: string = '
           quality: "high",
           scale: "showAll",
           forceScale: true,
+          forceAlign: true,
+          splashScreen: false,
           openUrlMode: "confirm",
           allowScriptAccess: true
         };
 
         function mountPlayer() {
           if (!window.RufflePlayer || typeof window.RufflePlayer.newest !== 'function') {
-            // Secondary CDN fallback if unpkg was stalled
-            if (statusMsg) statusMsg.textContent = 'Connecting via secondary CDN mirror...';
-            const fallbackScript = document.createElement('script');
-            fallbackScript.src = 'https://cdn.jsdelivr.net/npm/@ruffle-rs/ruffle';
-            fallbackScript.onload = doLaunch;
-            fallbackScript.onerror = function() {
-              if (statusMsg) statusMsg.textContent = 'Ruffle mirror offline. Please check network connection.';
-              setTimeout(dismissLoader, 3000);
-            };
-            document.head.appendChild(fallbackScript);
-            return;
+            return false;
           }
-          doLaunch();
-        }
-
-        function doLaunch() {
           try {
-            if (statusMsg) statusMsg.textContent = 'Mounting Flash Virtual Machine...';
-            const ruffle = window.RufflePlayer.newest();
-            playerInstance = ruffle.createPlayer();
-            playerInstance.style.width = '100vw';
-            playerInstance.style.height = '100vh';
-
+            var ruffle = window.RufflePlayer.newest();
+            var playerInstance = ruffle.createPlayer();
+            var host = document.getElementById('ruffle-host');
+            if (!host) return false;
             host.innerHTML = '';
             host.appendChild(playerInstance);
 
@@ -150,20 +133,47 @@ export function buildOfficialClruffleHtml(swfData: string, gameTitle: string = '
             } else {
               dismissLoader();
             }
-          } catch (err) {
-            console.error('Ruffle mount error:', err);
+
+            playerInstance.style.width = '100vw';
+            playerInstance.style.height = '100vh';
+            return true;
+          } catch(e) {
+            console.error('Ruffle init error:', e);
             dismissLoader();
+            return false;
           }
         }
 
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-          mountPlayer();
-        } else {
-          window.addEventListener('DOMContentLoaded', mountPlayer);
+        function loadRuffleWithFallback() {
+          if (mountPlayer()) return;
+
+          var statusEl = document.getElementById('status');
+          if (statusEl) statusEl.textContent = 'Loading backup Ruffle CDN...';
+
+          var fallback = document.createElement('script');
+          fallback.src = 'https://cdn.jsdelivr.net/npm/@ruffle-rs/ruffle';
+          fallback.onload = function() {
+            setTimeout(function() {
+              if (!mountPlayer()) {
+                dismissLoader();
+              }
+            }, 100);
+          };
+          fallback.onerror = function() {
+            if (statusEl) statusEl.textContent = 'Failed to load Flash engine. Check internet connection.';
+            setTimeout(dismissLoader, 3000);
+          };
+          document.head.appendChild(fallback);
         }
 
-        // Failsafe timer: NEVER stay stuck on loading screen under any circumstances
-        setTimeout(dismissLoader, 2800);
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', loadRuffleWithFallback);
+        } else {
+          loadRuffleWithFallback();
+        }
+
+        // Failsafe timer: dismiss loader after 4 seconds max
+        setTimeout(dismissLoader, 4000);
       })();
     </script>
   </body>
