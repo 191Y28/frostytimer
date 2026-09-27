@@ -245,12 +245,18 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
   // 6. Check for Canvas Presence or Flash/SWF/Ruffle/Emulator Presence
   const hasCanvas = lower.includes('<canvas') || lower.includes('getcontext(') || lower.includes('createelement("canvas")');
   const hasRuffleOrFlash = lower.includes('ruffle') || lower.includes('.swf') || lower.includes('<embed') || lower.includes('<object');
-  const hasEmulator = lower.includes('emulatorjs') || lower.includes('jsdos') || lower.includes('dosbox') || lower.includes('wasm');
+  const hasEmulator = lower.includes('emulatorjs') || lower.includes('jsdos') || lower.includes('dosbox') || lower.includes('wasm') || lower.includes('gameconfig');
 
   // If Flash is detected but no Ruffle script is in the file, inject Ruffle script automatically
   if (hasRuffleOrFlash && !lower.includes('@ruffle-rs/ruffle') && !lower.includes('unpkg.com/@ruffle-rs')) {
     code = `<script src="https://unpkg.com/@ruffle-rs/ruffle"></script>\n` + code;
     fixesApplied.push('Injected Ruffle WebAssembly Flash runtime engine');
+  }
+
+  // If EmuJS Retro GameConfig is detected but loader.js is missing, inject loader and viewport
+  if ((lower.includes('window.gameconfig') || lower.includes('gameconfig')) && !lower.includes('loader.js') && !lower.includes('emujs')) {
+    code += `\n<div id="emulator" style="width:100vw;height:100vh;position:absolute;top:0;left:0;background:#000;z-index:9999;"></div>\n<script src="https://cdn.jsdelivr.net/gh/ethanaobrien/emujs@main/loader.js"></script>\n`;
+    fixesApplied.push('Injected EmuJS Arcade Retro Loader & Viewport Container');
   }
 
   // 7. Inject Elite Polyfill & Runtime Protection Header
@@ -259,6 +265,24 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
 <script>
 (function() {
   'use strict';
+
+  // Google Gadget & Workspace JSAPI Stubs to prevent unhandled function crashes
+  window.maeExportApis_ = window.maeExportApis_ || function() {};
+  try {
+    if (window.parent) {
+      window.parent.maeExportApis_ = window.parent.maeExportApis_ || function() {};
+    }
+  } catch (e) {}
+
+  window.gadgets = window.gadgets || {
+    util: {
+      registerOnLoadHandler: function(fn) {
+        if (typeof fn === 'function') {
+          try { fn(); } catch(err) {}
+        }
+      }
+    }
+  };
 
   // 1. Ruffle Configuration (Autoplay on, letterboxing on, forceScale true, quality high)
   window.RufflePlayer = window.RufflePlayer || {};
