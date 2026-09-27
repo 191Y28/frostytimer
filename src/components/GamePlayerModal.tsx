@@ -464,7 +464,6 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
             key={`${game.id}_${keySeed}`}
             ref={iframeRef}
             srcDoc={executableHtml}
-            src={blobUrl || undefined}
             title={game.title}
             scrolling="no"
             allow="autoplay; fullscreen; gamepad; clipboard-read; clipboard-write; microphone; camera; focus-without-user-activation; cross-origin-isolated"

@@ -111,6 +111,33 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
   const fixesApplied: string[] = [];
   let code = rawHtml;
 
+  // Check if code is already protected by Frosty Arcades Elite Protection Suite
+  if (code.includes('[Frosty Arcades Elite Protection Suite]')) {
+    return {
+      repairedHtml: code,
+      report: {
+        healthScore: 100,
+        issuesFound: [],
+        fixesApplied: ['Already protected by Frosty Suite'],
+        hasFramebusters: false,
+        hasBlockedTrackers: false,
+        hasMissingSdk: false,
+        hasCanvas: true,
+        isSanitized: true,
+      },
+    };
+  }
+
+  // Strip corrupted duplicate outer doctype / html / body wrappers accumulated from prior passes
+  let cleanBodyContent = code;
+  while (
+    /^\s*(?:<!doctype\s+html[^>]*>|<html>|<head><\/head>|<body>)+\s*<!doctype/i.test(cleanBodyContent)
+  ) {
+    cleanBodyContent = cleanBodyContent.replace(/^\s*(?:<!doctype\s+html[^>]*>|<html>|<head><\/head>|<body>)+\s*/i, '');
+  }
+
+  code = cleanBodyContent;
+
   // 0a. Strip leading HTML comments and preamble whitespace that break browser MIME type sniffing
   code = code.replace(/^(?:\s*<!--[\s\S]*?-->\s*)+/gi, '').trim();
 
@@ -410,7 +437,12 @@ export function sanitizeAndRepairHtml(rawHtml: string): {
   } else if (/<html[^>]*>/i.test(code)) {
     code = code.replace(/<html[^>]*>/i, `$&<head>${protectiveRuntimeHeader}</head>`);
   } else {
-    code = `<!DOCTYPE html><html><head>${protectiveRuntimeHeader}</head><body>${code}</body></html>`;
+    code = `<html><head>${protectiveRuntimeHeader}</head><body>${code}</body></html>`;
+  }
+
+  // Ensure strict <!DOCTYPE html> at line 1
+  if (!/^\s*<!DOCTYPE\s+html/i.test(code)) {
+    code = `<!DOCTYPE html>\n` + code;
   }
 
   // Calculate Health Score
