@@ -132,10 +132,57 @@ export default function App() {
 
         // 3. Fallback: If both IndexedDB and Firestore are empty (e.g. first visit on GitHub Pages)
         if (storedGames.length === 0 && (!cloudGames || cloudGames.length === 0)) {
+          try {
+            const masterRes = await fetch('./frosty-archive-backup-2026-09-28.frosty.json');
+            if (masterRes.ok) {
+              const masterData = await masterRes.json();
+              const masterGames: GameItem[] = masterData.games || [];
+              if (masterGames.length > 0) {
+                setGames(masterGames);
+                await saveMultipleGamesToDB(masterGames);
+                return;
+              }
+            }
+          } catch {}
+
           if (DEFAULT_GAMES.length > 0) {
             setGames(DEFAULT_GAMES);
             await saveMultipleGamesToDB(DEFAULT_GAMES);
             await saveMultipleGamesToFirestore(DEFAULT_GAMES);
+          }
+        } else if (storedGames.length > 0) {
+          // Check if existing stored games are missing standalone code
+          const missingCodeCount = storedGames.filter(g => !g.codeOrData || g.codeOrData.length < 50).length;
+          if (missingCodeCount > 50) {
+            // Asynchronously hydrate game code from master catalog in the background
+            fetch('./frosty-archive-backup-2026-09-28.frosty.json')
+              .then(res => res.json())
+              .then(async (masterData) => {
+                if (masterData && Array.isArray(masterData.games)) {
+                  const masterCodeMap = new Map<string, string>();
+                  masterData.games.forEach((mg: any) => {
+                    if (mg.codeOrData && mg.codeOrData.length > 50) {
+                      masterCodeMap.set(mg.id, mg.codeOrData);
+                      if (mg.title) masterCodeMap.set(mg.title, mg.codeOrData);
+                    }
+                  });
+
+                  if (masterCodeMap.size > 0) {
+                    setGames((currentGames) => {
+                      const updated = currentGames.map((g) => {
+                        if (!g.codeOrData || g.codeOrData.length < 50) {
+                          const code = masterCodeMap.get(g.id) || masterCodeMap.get(g.title) || '';
+                          if (code) return { ...g, codeOrData: code };
+                        }
+                        return g;
+                      });
+                      saveMultipleGamesToDB(updated).catch(() => {});
+                      return updated;
+                    });
+                  }
+                }
+              })
+              .catch(() => {});
           }
         }
       } catch (err) {

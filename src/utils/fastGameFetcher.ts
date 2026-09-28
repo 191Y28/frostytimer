@@ -23,27 +23,25 @@ function buildFetchCandidates(item: ExtractedGameLink): string[] {
 
   if (item.driveFileId) {
     const id = item.driveFileId;
-    const direct0 = `https://drive.google.com/uc?export=view&id=${id}`;
-    const direct1 = `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
-    const direct2 = `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
-    const direct3 = `https://docs.google.com/uc?export=download&id=${id}`;
+    const directUserContent = `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`;
+    const directUc = `https://drive.google.com/uc?export=download&id=${id}&confirm=t`;
 
-    // Fast-path: CORS proxies
-    candidates.push(`https://corsproxy.io/?url=${encodeURIComponent(direct0)}`);
-    candidates.push(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(direct0)}`);
-    candidates.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(direct0)}`);
-    candidates.push(direct0);
-    candidates.push(`https://corsproxy.io/?url=${encodeURIComponent(direct1)}`);
-    candidates.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(direct1)}`);
-    candidates.push(direct1);
-    candidates.push(direct2);
-    candidates.push(direct3);
+    // 1. Direct anonymous Usercontent CDN (CORS enabled, bypasses school/MCPS account restrictions)
+    candidates.push(directUserContent);
+    // 2. High-speed CORS proxies pointing directly to Usercontent download endpoint
+    candidates.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(directUserContent)}`);
+    candidates.push(`https://corsproxy.io/?url=${encodeURIComponent(directUserContent)}`);
+    candidates.push(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(directUserContent)}`);
+    // 3. Fallback direct uc endpoint
+    candidates.push(directUc);
+    candidates.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(directUc)}`);
+    candidates.push(`https://corsproxy.io/?url=${encodeURIComponent(directUc)}`);
   } else {
     const rawUrl = item.url;
+    candidates.push(rawUrl);
+    candidates.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`);
     candidates.push(`https://corsproxy.io/?url=${encodeURIComponent(rawUrl)}`);
     candidates.push(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawUrl)}`);
-    candidates.push(`https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`);
-    candidates.push(rawUrl);
   }
 
   return candidates;
@@ -122,6 +120,7 @@ async function fetchWithTimeout(
   try {
     const response = await fetch(url, {
       signal: controller.signal,
+      credentials: 'omit', // CRITICAL: NEVER send school MCPS Google account cookies
       headers: {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
@@ -140,8 +139,10 @@ async function fetchWithTimeout(
       if (confirmMatch && driveFileId) {
         const confirmToken = confirmMatch[1];
         const confirmUrl = `https://drive.usercontent.google.com/download?id=${driveFileId}&export=download&confirm=${confirmToken}`;
-        const confirmFetch = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(confirmUrl)}`);
-        if (confirmFetch.ok) {
+        const confirmFetch = await fetch(confirmUrl, { credentials: 'omit' }).catch(() =>
+          fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(confirmUrl)}`)
+        );
+        if (confirmFetch && confirmFetch.ok) {
           const confirmedText = await confirmFetch.text();
           if (confirmedText.length > 50) {
             return extractResultFromText(confirmedText);
@@ -149,6 +150,16 @@ async function fetchWithTimeout(
         }
       }
       throw new Error('Hit Google Drive confirm prompt without token');
+    }
+
+    // Check if Google returned a sign-in or permission-denied HTML page instead of the game
+    if (
+      text.includes('Sign in - Google Accounts') ||
+      text.includes('accounts.google.com/signin') ||
+      text.includes('You need access') ||
+      text.includes("You don't have permission")
+    ) {
+      throw new Error('Google returned a sign-in / permission error instead of file content');
     }
 
     // Basic validity check: must have some content and not be a 404 HTML page from proxy

@@ -171,7 +171,7 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [game.id, game.codeOrData, game.driveUrl]);
+  }, [game.id, game.codeOrData, game.driveUrl, keySeed]);
 
   // Toggle fullscreen (hides header completely and fills whole screen)
   const toggleFullscreen = () => {
@@ -453,10 +453,10 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
           <div className="flex flex-col items-center gap-3 text-cyan-300">
             <Loader2 className="w-9 h-9 animate-spin text-cyan-400" />
             <p className="text-sm font-semibold tracking-wide text-cyan-200">
-              ⚡ Lazy-loading game from Google Drive...
+              ⚡ Loading game into local sandbox...
             </p>
             <p className="text-xs font-mono text-slate-400">
-              Fetching game binary & applying elite runtime sanitization...
+              Bypassing Google Drive restrictions & isolating game binary...
             </p>
           </div>
         ) : executableHtml ? (
@@ -470,47 +470,26 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
             className="w-full h-full flex-1 border-0 block bg-black overflow-hidden"
             style={{ overflow: 'hidden' }}
           />
-        ) : driveFileId ? (
-          <iframe
-            key={`drive_preview_${game.id}_${keySeed}`}
-            ref={iframeRef}
-            src={`https://drive.google.com/file/d/${driveFileId}/preview`}
-            title={`${game.title} (Drive Preview)`}
-            scrolling="no"
-            allow="autoplay; fullscreen; gamepad; focus-without-user-activation"
-            className="w-full h-full flex-1 border-0 block bg-black overflow-hidden"
-            style={{ overflow: 'hidden' }}
-          />
         ) : (
           <div className="flex flex-col items-center gap-4 text-center max-w-md p-6 bg-slate-900 border border-slate-800 rounded-2xl">
-            <ShieldCheck className="w-10 h-10 text-rose-400" />
+            <ShieldCheck className="w-10 h-10 text-amber-400" />
             <div>
-              <h3 className="text-base font-bold text-white mb-1">Game Binary Unavailable</h3>
+              <h3 className="text-base font-bold text-white mb-1">Local Sandbox Execution</h3>
               <p className="text-xs text-slate-400">
-                Could not download raw game code for "{game.title}". Verify that the Google Drive link is publicly shared.
+                Could not automatically retrieve offline game binary for "{game.title}". Your school network filter may be blocking the download endpoint.
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 onClick={() => {
+                  sound.playKeypress();
                   setIsLoadingCode(true);
                   setKeySeed((prev) => prev + 1);
                 }}
                 className="px-3 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950 hover:bg-cyan-900 border border-cyan-800 rounded-lg cursor-pointer"
               >
-                Retry Download
+                Retry Bypass Download
               </button>
-              {game.driveUrl && (
-                <a
-                  href={game.driveUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-1.5 text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg cursor-pointer flex items-center gap-1"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Open Drive Link</span>
-                </a>
-              )}
             </div>
           </div>
         )}
