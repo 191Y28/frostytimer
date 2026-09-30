@@ -220,16 +220,9 @@ export const GamesView: React.FC<GamesViewProps> = ({
   const [search, setSearch] = useState('');
   const [selectedLetter, setSelectedLetter] = useState<string>('ALL');
   const [selectedGenre, setSelectedGenre] = useState<string>('all');
-  const [sortByHealth, setSortByHealth] = useState<boolean>(false);
-  const [hide100Health, setHide100Health] = useState<boolean>(false);
   // Progressive reveal count for ALL view (starts at 60 to prevent DOM spikes, loads in 60-item chunks)
   const [visibleCount, setVisibleCount] = useState<number>(60);
   const CHUNK_SIZE = 60;
-
-  // Count games with less than 100% health
-  const lowHealthCount = useMemo(() => {
-    return games.filter((g) => !g.isSlop && (g.healthScore ?? 100) < 100).length;
-  }, [games]);
 
   // Dynamically extract all available genres from indexed games
   const availableGenres = useMemo(() => {
@@ -355,23 +348,10 @@ export const GamesView: React.FC<GamesViewProps> = ({
         }
       }
 
-      // 5. Hide 100% health when low-health filter is isolating imperfect games
-      if (sortByHealth && hide100Health) {
-        const score = typeof game.healthScore === 'number' ? game.healthScore : 100;
-        if (score >= 100) return false;
-      }
-
       return true;
     });
 
-    if (sortByHealth) {
-      list.sort((a, b) => {
-        const scoreA = typeof a.healthScore === 'number' ? a.healthScore : 100;
-        const scoreB = typeof b.healthScore === 'number' ? b.healthScore : 100;
-        if (scoreA !== scoreB) return scoreA - scoreB; // Lowest health first
-        return a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' });
-      });
-    } else if (search.trim()) {
+    if (search.trim()) {
       const q = search.trim();
       list.sort((a, b) => {
         const scoreB = getSearchScore(b, q);
@@ -406,7 +386,7 @@ export const GamesView: React.FC<GamesViewProps> = ({
     }
 
     return list;
-  }, [games, search, filterType, selectedLetter, selectedGenre, isVoteMode, sortByHealth, hide100Health]);
+  }, [games, search, filterType, selectedLetter, selectedGenre, isVoteMode]);
 
   // When a specific letter is picked (#, A-Z), display ALL games for that letter without limits!
   // When browsing ALL (or when list > 100), progressively reveal to keep browser smooth.
@@ -499,42 +479,6 @@ export const GamesView: React.FC<GamesViewProps> = ({
               {favoritesCount > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-950 text-amber-300 border border-amber-800/40">
                   {favoritesCount}
-                </span>
-              )}
-            </button>
-
-            {/* Lowest Health Filter Button */}
-            <button
-              onClick={() => {
-                sound.playKeypress();
-                const next = !sortByHealth;
-                setSortByHealth(next);
-                if (next) {
-                  setSelectedLetter('ALL');
-                  setVisibleCount(120);
-                } else {
-                  setHide100Health(false);
-                }
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
-                sortByHealth
-                  ? 'bg-rose-950/90 text-rose-300 border border-rose-700/80 shadow-sm ring-1 ring-rose-500/40'
-                  : 'text-slate-400 hover:text-rose-300'
-              }`}
-              title="Filter games from lowest health score to highest health score"
-            >
-              <Activity className={`w-3.5 h-3.5 ${sortByHealth ? 'text-rose-400 animate-pulse' : 'text-slate-400'}`} />
-              <span>Lowest Health</span>
-              {lowHealthCount > 0 && (
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono border ${
-                    sortByHealth
-                      ? 'bg-rose-900 text-rose-200 border-rose-600'
-                      : 'bg-rose-950/80 text-rose-400 border-rose-800/40'
-                  }`}
-                  title={`${lowHealthCount} games with <100% health`}
-                >
-                  {lowHealthCount}
                 </span>
               )}
             </button>
@@ -639,44 +583,6 @@ export const GamesView: React.FC<GamesViewProps> = ({
                   </button>
                 );
               })}
-            </div>
-          </div>
-        )}
-
-        {/* Active Lowest Health Banner */}
-        {sortByHealth && (
-          <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5 bg-rose-950/40 border border-rose-800/60 rounded-xl text-xs text-rose-200 mt-2 shadow-inner">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-rose-400 animate-pulse shrink-0" />
-              <span>
-                Sorting by <strong>Lowest Health First</strong> &middot; Showing {displayedGames.length} {displayedGames.length === 1 ? 'game' : 'games'}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  sound.playKeypress();
-                  setHide100Health(!hide100Health);
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer border ${
-                  hide100Health
-                    ? 'bg-rose-900 text-white border-rose-500 shadow-sm'
-                    : 'bg-slate-900/80 text-rose-300 border-rose-800/60 hover:bg-rose-950'
-                }`}
-                title="Only show games with less than 100% health"
-              >
-                {hide100Health ? '✓ Hiding 100% Health (Low Only)' : 'Hide 100% (Show Low Only)'}
-              </button>
-              <button
-                onClick={() => {
-                  sound.playKeypress();
-                  setSortByHealth(false);
-                  setHide100Health(false);
-                }}
-                className="text-[11px] text-slate-400 hover:text-white px-2 py-1 underline transition-colors cursor-pointer"
-              >
-                Reset
-              </button>
             </div>
           </div>
         )}

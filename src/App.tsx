@@ -91,12 +91,19 @@ export default function App() {
       try {
         testConnection();
 
-        const CURRENT_CATALOG_VERSION = 'ugs_v3_master_2026_09_29';
+        const CURRENT_CATALOG_VERSION = 'ugs_v5_master_names_fixed_2026_09_29';
         const storedVersion = localStorage.getItem('frosty_catalog_version');
         const ugsCatalog = getUgsGameItems();
 
-        // If client has old cache from previous Google Drive era, purge it completely and replace everything!
-        if (storedVersion !== CURRENT_CATALOG_VERSION) {
+        // 1. Get stored games from IndexedDB
+        const storedGames = await getAllGamesFromDB();
+
+        // Detect if client has the 5,154 duplicate games issue, or legacy Google Drive links, or outdated version
+        const hasLegacyGoogleDriveGames = storedGames.some(g => g.driveUrl && g.driveUrl.includes('drive.google.com'));
+        const hasDuplicateBloat = storedGames.length > 3000;
+        const needsFreshPurge = storedVersion !== CURRENT_CATALOG_VERSION || hasDuplicateBloat || hasLegacyGoogleDriveGames || storedGames.length === 0;
+
+        if (needsFreshPurge) {
           console.log('Purging old cache and replacing everything with fresh 2,824 UGS master games...');
           await clearAllGamesFromDB();
           try {
@@ -109,15 +116,7 @@ export default function App() {
           return;
         }
 
-        // 1. Get stored games from IndexedDB
-        const storedGames = await getAllGamesFromDB();
-
-        if (storedGames.length === 0) {
-          setGames(ugsCatalog);
-          await saveMultipleGamesToDB(ugsCatalog);
-        } else {
-          setGames(storedGames);
-        }
+        setGames(storedGames);
       } catch (err) {
         console.warn('Initial game load warning:', err);
       }
@@ -440,6 +439,26 @@ export default function App() {
     );
   }
 
+  const handleWipeCacheAndReset = async () => {
+    try {
+      sound.playLock();
+      await clearAllGamesFromDB();
+      try {
+        localStorage.removeItem('frosty_games_cache');
+      } catch {}
+      const CURRENT_CATALOG_VERSION = 'ugs_v5_master_names_fixed_2026_09_29';
+      localStorage.setItem('frosty_catalog_version', CURRENT_CATALOG_VERSION);
+      localStorage.setItem('frosty_cloak_unlocked', 'true');
+
+      const freshCatalog = getUgsGameItems();
+      setGames(freshCatalog);
+      await saveMultipleGamesToDB(freshCatalog);
+      sound.playUnlock();
+    } catch (err) {
+      console.error('Wipe cache error:', err);
+    }
+  };
+
   // Unlocked Portal
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-cyan-500/20">
@@ -462,6 +481,7 @@ export default function App() {
         onSetDevMode={setIsDevMode}
         onOpenRenameTool={() => setShowDevRenameModal(true)}
         onOpenDeleteTool={() => setShowDevDeleteModal(true)}
+        onWipeCacheAndReset={handleWipeCacheAndReset}
       />
 
       {/* Main Tab View */}
