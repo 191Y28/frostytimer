@@ -1,5 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
+  initializeFirestore,
   getFirestore,
   collection,
   doc,
@@ -9,15 +10,24 @@ import {
   deleteDoc,
   writeBatch,
   onSnapshot,
-  getDocFromServer
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { GameItem } from '../types';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const db = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+
+export const db = (() => {
+  try {
+    const dbId = firebaseConfig.firestoreDatabaseId || '(default)';
+    return initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+    }, dbId);
+  } catch {
+    return firebaseConfig.firestoreDatabaseId
+      ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+      : getFirestore(app);
+  }
+})();
 
 const GAMES_COLLECTION = 'games';
 
@@ -33,17 +43,23 @@ function handleFirestoreError(err: any, context: string) {
     isQuotaExceeded = true;
     console.warn(`Firestore Quota Limit Exceeded in [${context}]. Falling back seamlessly to local IndexedDB storage.`);
   } else {
-    console.warn(`Firestore warning in [${context}]:`, msg);
+    console.warn(`Firestore notice in [${context}]:`, msg);
   }
 }
 
 /**
- * Validate connection to Firestore at startup
+ * Validate connection to Firestore at startup with fast timeout
  */
 export async function testConnection(): Promise<boolean> {
   if (isQuotaExceeded) return false;
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Connection check timeout')), 2500)
+    );
+    await Promise.race([
+      getDocs(collection(db, GAMES_COLLECTION)),
+      timeoutPromise
+    ]);
     return true;
   } catch (error) {
     handleFirestoreError(error, 'testConnection');

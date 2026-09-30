@@ -134,7 +134,7 @@ export const ArchiveBackupModal: React.FC<ArchiveBackupModalProps> = ({ onClose,
   const handleImportBuiltInCatalog = async () => {
     sound.playKeypress();
     setIsImporting(true);
-    setStatusMsg('Fetching built-in 2,368 game master catalog...');
+    setStatusMsg('Fetching built-in 2,824 game master catalog...');
 
     try {
       const response = await fetch('./frosty-archive-backup-2026-09-28.frosty.json');

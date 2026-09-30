@@ -20,6 +20,7 @@ import { EvasionSettingsModal } from './components/EvasionSettingsModal';
 import { DeveloperRenameModal } from './components/DeveloperRenameModal';
 import { DeveloperDeleteModal } from './components/DeveloperDeleteModal';
 import { GameOperationsHubModal, HubTab } from './components/GameOperationsHubModal';
+import { getUgsGameItems } from './data/ugsGames';
 import { GameItem } from './types';
 import { DEFAULT_GAMES } from './utils/defaultGames';
 import { sanitizeAndRepairHtml } from './utils/eliteCodeSanitizer';
@@ -85,105 +86,37 @@ export default function App() {
     const savedTabPreset = (localStorage.getItem('frosty_tab_preset') as CloakPreset) || 'frosty';
     applyTabCloak(savedTabPreset);
 
-    // Initialize games with real Firestore Cloud persistence + local IndexedDB fallback
+    // Initialize games with clean catalog cache invalidation
     const loadGames = async () => {
       try {
         testConnection();
 
-        // 1. Get stored games from IndexedDB first for instant UI loading
-        const storedGames = await getAllGamesFromDB();
+        const CURRENT_CATALOG_VERSION = 'ugs_v3_master_2026_09_29';
+        const storedVersion = localStorage.getItem('frosty_catalog_version');
+        const ugsCatalog = getUgsGameItems();
 
-        const storedCodeMap = new Map<string, string>();
-        const storedDriveMap = new Map<string, string>();
-        storedGames.forEach((g) => {
-          if (g.codeOrData) storedCodeMap.set(g.id, g.codeOrData);
-          if (g.driveUrl) storedDriveMap.set(g.id, g.driveUrl);
-        });
+        // If client has old cache from previous Google Drive era, purge it completely and replace everything!
+        if (storedVersion !== CURRENT_CATALOG_VERSION) {
+          console.log('Purging old cache and replacing everything with fresh 2,824 UGS master games...');
+          await clearAllGamesFromDB();
+          try {
+            localStorage.removeItem('frosty_games_cache');
+          } catch {}
+          localStorage.setItem('frosty_catalog_version', CURRENT_CATALOG_VERSION);
 
-        // Helper to auto-repair games containing raw Google Gadget XML, comments, or broken loader references
-        const repairGame = (g: GameItem): GameItem => {
-          let code = g.codeOrData || storedCodeMap.get(g.id) || '';
-          if (code && typeof code === 'string' && code.length > 20) {
-            const { repairedHtml } = sanitizeAndRepairHtml(code);
-            if (repairedHtml) {
-              code = repairedHtml;
-            }
-          }
-          return {
-            ...g,
-            codeOrData: code,
-            driveUrl: g.driveUrl || storedDriveMap.get(g.id) || '',
-          };
-        };
-
-        if (storedGames.length > 0) {
-          const repairedStored = storedGames.map(repairGame);
-          setGames(repairedStored);
-        }
-
-        // 2. Asynchronously sync from Firebase Firestore Cloud if available
-        const cloudGames = await getAllGamesFromFirestore();
-        if (cloudGames && cloudGames.length > 0) {
-          const cleanCloudGames = cloudGames.map(repairGame);
-          setGames(cleanCloudGames);
-          await saveMultipleGamesToDB(cleanCloudGames);
+          setGames(ugsCatalog);
+          await saveMultipleGamesToDB(ugsCatalog);
           return;
         }
 
-        // 3. Fallback: If both IndexedDB and Firestore are empty (e.g. first visit on GitHub Pages)
-        if (storedGames.length === 0 && (!cloudGames || cloudGames.length === 0)) {
-          try {
-            const masterRes = await fetch('./frosty-archive-backup-2026-09-28.frosty.json');
-            if (masterRes.ok) {
-              const masterData = await masterRes.json();
-              const masterGames: GameItem[] = masterData.games || [];
-              if (masterGames.length > 0) {
-                setGames(masterGames);
-                await saveMultipleGamesToDB(masterGames);
-                return;
-              }
-            }
-          } catch {}
+        // 1. Get stored games from IndexedDB
+        const storedGames = await getAllGamesFromDB();
 
-          if (DEFAULT_GAMES.length > 0) {
-            setGames(DEFAULT_GAMES);
-            await saveMultipleGamesToDB(DEFAULT_GAMES);
-            await saveMultipleGamesToFirestore(DEFAULT_GAMES);
-          }
-        } else if (storedGames.length > 0) {
-          // Check if existing stored games are missing standalone code
-          const missingCodeCount = storedGames.filter(g => !g.codeOrData || g.codeOrData.length < 50).length;
-          if (missingCodeCount > 50) {
-            // Asynchronously hydrate game code from master catalog in the background
-            fetch('./frosty-archive-backup-2026-09-28.frosty.json')
-              .then(res => res.json())
-              .then(async (masterData) => {
-                if (masterData && Array.isArray(masterData.games)) {
-                  const masterCodeMap = new Map<string, string>();
-                  masterData.games.forEach((mg: any) => {
-                    if (mg.codeOrData && mg.codeOrData.length > 50) {
-                      masterCodeMap.set(mg.id, mg.codeOrData);
-                      if (mg.title) masterCodeMap.set(mg.title, mg.codeOrData);
-                    }
-                  });
-
-                  if (masterCodeMap.size > 0) {
-                    setGames((currentGames) => {
-                      const updated = currentGames.map((g) => {
-                        if (!g.codeOrData || g.codeOrData.length < 50) {
-                          const code = masterCodeMap.get(g.id) || masterCodeMap.get(g.title) || '';
-                          if (code) return { ...g, codeOrData: code };
-                        }
-                        return g;
-                      });
-                      saveMultipleGamesToDB(updated).catch(() => {});
-                      return updated;
-                    });
-                  }
-                }
-              })
-              .catch(() => {});
-          }
+        if (storedGames.length === 0) {
+          setGames(ugsCatalog);
+          await saveMultipleGamesToDB(ugsCatalog);
+        } else {
+          setGames(storedGames);
         }
       } catch (err) {
         console.warn('Initial game load warning:', err);

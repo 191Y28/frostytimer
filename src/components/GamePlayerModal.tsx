@@ -29,6 +29,7 @@ import { sound } from '../utils/audio';
 import { getGameByIdFromDB, saveGameToDB } from '../utils/indexedDB';
 import { fastDownloadGame } from '../utils/fastGameFetcher';
 import { extractDriveFileId } from '../utils/linkExtractorImporter';
+import { fetchUgsGameHtml, launchInAboutBlankStealth } from '../utils/ugsService';
 
 interface GamePlayerModalProps {
   game: GameItem;
@@ -134,6 +135,22 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
             setLoadedCode(dbGame.codeOrData);
             setIsLoadingCode(false);
             return;
+          }
+
+          // Check if it's a UGS CDN game
+          const candidateUgs = game.fileName || (game.id.startsWith('cl') ? game.id : null);
+          if (candidateUgs) {
+            try {
+              const ugsHtml = await fetchUgsGameHtml(candidateUgs);
+              if (ugsHtml && isMounted) {
+                setLoadedCode(ugsHtml);
+                await saveGameToDB({ ...game, codeOrData: ugsHtml });
+                setIsLoadingCode(false);
+                return;
+              }
+            } catch (ugsErr) {
+              console.warn('UGS CDN fetch attempt failed, trying fallback:', ugsErr);
+            }
           }
 
           // If code was not in IndexedDB but driveUrl is known, recover on the fly!
